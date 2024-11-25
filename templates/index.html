@@ -1,0 +1,314 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Group 13 Chatbot AI with Image Processing</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .chat-container {
+            background-color: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .chat-history {
+            height: 400px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .message {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        
+        .user-message {
+            background-color: #e3f2fd;
+            margin-left: 20%;
+        }
+        
+        .bot-message {
+            background-color: #f5f5f5;
+            margin-right: 20%;
+        }
+        
+        .input-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        #user-input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            background-color: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background-color: #1976d2;
+        }
+        
+        .loading {
+            display: none;
+            color: #666;
+            font-style: italic;
+        }
+        
+        .image-container {
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 2px dashed #ddd;
+            border-radius: 5px;
+            text-align: center;
+        }
+        
+        .image-preview {
+            max-width: 100%;
+            max-height: 300px;
+            margin: 10px 0;
+            display: none;
+        }
+        
+        .extracted-text {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            display: none;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin: 10px 0;
+        }
+        
+        #camera-container {
+            display: none;
+            margin: 10px 0;
+        }
+        
+        #camera-video {
+            width: 100%;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        
+        .copy-button {
+            background-color: #4caf50;
+        }
+        
+        .use-text-button {
+            background-color: #ff9800;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <h1>Group 13 Chatbot AI with Image Processing</h1>
+        
+        <div class="image-container">
+            <div class="button-group">
+                <button onclick="document.getElementById('file-input').click()">Upload Image</button>
+                <button onclick="startCamera()">Use Camera</button>
+            </div>
+            <input type="file" id="file-input" accept="image/*" style="display: none" onchange="handleImageUpload(event)">
+            
+            <div id="camera-container">
+                <video id="camera-video" autoplay playsinline></video>
+                <div class="button-group">
+                    <button onclick="captureImage()">Capture</button>
+                    <button onclick="stopCamera()">Cancel</button>
+                </div>
+            </div>
+            
+            <img id="image-preview" class="image-preview">
+            <div id="extracted-text" class="extracted-text">
+                <h3>Extracted Text:</h3>
+                <p id="text-content"></p>
+                <div class="button-group">
+                    <button class="copy-button" onclick="copyText()">Copy Text</button>
+                    <button class="use-text-button" onclick="useExtractedText()">Use as Message</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-history" id="chat-history"></div>
+        <div class="loading" id="loading">AI is thinking...</div>
+        <div class="input-container">
+            <input type="text" id="user-input" placeholder="Type your message...">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let messageHistory = [];
+        let stream;
+
+        function addMessage(content, isUser) {
+            const message = document.createElement('div');
+            message.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+            message.textContent = content;
+            
+            document.getElementById('chat-history').appendChild(message);
+            document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
+            
+            messageHistory.push({
+                role: isUser ? "user" : "assistant",
+                content: content
+            });
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('user-input');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            input.value = '';
+            addMessage(message, true);
+            
+            document.getElementById('loading').style.display = 'block';
+            
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        messages: messageHistory
+                    }),
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                addMessage(data.response, false);
+            } catch (error) {
+                console.error('Error:', error);
+                addMessage('Sorry, an error occurred. Please try again.', false);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        async function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            await processImage(formData);
+        }
+
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const video = document.getElementById('camera-video');
+                video.srcObject = stream;
+                document.getElementById('camera-container').style.display = 'block';
+            } catch (error) {
+                console.error('Error accessing camera:', error);
+                alert('Error accessing camera. Please make sure you have granted camera permissions.');
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            document.getElementById('camera-container').style.display = 'none';
+        }
+
+        async function captureImage() {
+            const video = document.getElementById('camera-video');
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            
+            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg'));
+            const formData = new FormData();
+            formData.append('image', canvas.toDataURL('image/jpeg'));
+            
+            stopCamera();
+            await processImage(formData);
+        }
+
+        async function processImage(formData) {
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                // Update UI with image and extracted text
+                const imagePreview = document.getElementById('image-preview');
+                imagePreview.src = `/uploads/${data.filename}`;
+                imagePreview.style.display = 'block';
+
+                const textContent = document.getElementById('text-content');
+                textContent.textContent = data.text;
+                document.getElementById('extracted-text').style.display = 'block';
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error processing image. Please try again.');
+            }
+        }
+
+        function copyText() {
+            const text = document.getElementById('text-content').textContent;
+            navigator.clipboard.writeText(text)
+                .then(() => alert('Text copied to clipboard!'))
+                .catch(err => console.error('Error copying text:', err));
+        }
+
+        function useExtractedText() {
+            const text = document.getElementById('text-content').textContent;
+            document.getElementById('user-input').value = text;
+        }
+
+        document.getElementById('user-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
